@@ -1,7 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import { api, jsonBody, dateFa } from "@/lib/client";
+import {
+  DEFAULT_BRANCH_APPEARANCE,
+  loadBranchAppearance,
+  saveBranchAppearance,
+  saveGlobalTheme,
+} from "@/lib/appearance";
 import { AuthScreen } from "@/components/auth";
 import { Icon, Modal, Spinner, Toast } from "@/components/ui";
 import {
@@ -13,7 +27,9 @@ import {
   SettingsSection,
 } from "@/components/sections";
 import type {
+  BranchAppearance,
   BranchSettings,
+  Business,
   HistoryEvent,
   PriceList,
   Product,
@@ -25,28 +41,12 @@ import type {
 const nav: { section: Section; label: string; icon: string }[] = [
   { section: "overview", label: "نمای کلی", icon: "grid" },
   { section: "products", label: "کالاها", icon: "box" },
-  { section: "suppliers", label: "تأمین‌کنندگان", icon: "users" },
   { section: "imports", label: "ورود قیمت‌نامه", icon: "upload" },
   { section: "review", label: "بازبینی تغییرها", icon: "file" },
+  { section: "suppliers", label: "تأمین‌کنندگان", icon: "users" },
   { section: "history", label: "تاریخچه و خروجی", icon: "clock" },
   { section: "settings", label: "تنظیمات قیمت", icon: "settings" },
 ];
-
-const titles: Record<Section, { title: string; description: string }> = {
-  overview: { title: "نمای کلی", description: "وضعیت کالاها و کارهایی که نیاز به پیگیری دارند" },
-  products: { title: "کالاها", description: "فهرست کالاهای همین شعبه و قیمت‌های فعلی" },
-  suppliers: { title: "تأمین‌کنندگان", description: "فهرست تأمین‌کنندگان ثبت‌شده در همین شعبه" },
-  imports: {
-    title: "ورود قیمت‌نامه",
-    description: "فایل تأمین‌کننده را بارگذاری و ستون‌ها را نگاشت کنید",
-  },
-  review: {
-    title: "بازبینی تغییرها",
-    description: "پیش از اعمال، کالا و قیمت پیشنهادی را بررسی کنید",
-  },
-  history: { title: "تاریخچه و خروجی", description: "تغییرهای تأییدشده و رویدادهای همین شعبه" },
-  settings: { title: "تنظیمات قیمت", description: "قواعد پیشنهادی برای محاسبهٔ قیمت فروش" },
-};
 
 export type Props = {
   session: SessionData;
@@ -63,6 +63,8 @@ export type Props = {
   onSelectPriceList: (id: string | null) => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, error?: boolean) => void;
+  appearance: BranchAppearance;
+  onAppearanceChange: (appearance: BranchAppearance) => void;
 };
 
 export function Workspace() {
@@ -81,8 +83,22 @@ export function Workspace() {
   const [mobileNav, setMobileNav] = useState(false);
   const [bootError, setBootError] = useState("");
   const [creationDialog, setCreationDialog] = useState<"business" | "branch" | null>(null);
+  const [appearance, setAppearance] = useState<BranchAppearance>(DEFAULT_BRANCH_APPEARANCE);
   const authenticated = session?.authenticated;
   const activeBranchId = session?.activeBranch?.id;
+
+  useEffect(() => {
+    if (activeBranchId) setAppearance(loadBranchAppearance(activeBranchId));
+  }, [activeBranchId]);
+
+  const changeAppearance = useCallback(
+    (next: BranchAppearance) => {
+      setAppearance(next);
+      saveGlobalTheme(next.mode);
+      if (activeBranchId) saveBranchAppearance(activeBranchId, next);
+    },
+    [activeBranchId],
+  );
 
   function clearBranchData() {
     setProducts([]);
@@ -165,6 +181,15 @@ export function Workspace() {
     [businesses, session?.activeBranch?.businessId],
   );
   const pendingLists = priceLists.filter((list) => list.status === "in_review").length;
+
+  useEffect(() => {
+    if (!mobileNav) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileNav(false);
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileNav]);
 
   async function switchContext(branchId: string) {
     try {
@@ -267,14 +292,32 @@ export function Workspace() {
     onSelectPriceList: setSelectedPriceList,
     onRefresh: refreshData,
     onToast: notify,
+    appearance,
+    onAppearanceChange: changeAppearance,
   };
 
+  const shellStyle = { "--brand-accent": appearance.accentColor } as CSSProperties;
+
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      data-theme={appearance.mode}
+      data-font-family={appearance.fontFamily}
+      style={shellStyle}
+    >
       {mobileNav && (
-        <div className="sidebar-backdrop" onClick={() => setMobileNav(false)} aria-hidden="true" />
+        <button
+          className="sidebar-backdrop"
+          type="button"
+          aria-label="بستن منو"
+          onClick={() => setMobileNav(false)}
+        />
       )}
-      <aside className={`sidebar${mobileNav ? " open" : ""}`} aria-label="ناوبری اصلی">
+      <aside
+        id="primary-navigation"
+        className={`sidebar${mobileNav ? " open" : ""}`}
+        aria-label="ناوبری اصلی"
+      >
         <div className="brand">
           <span className="brand-mark">
             <Icon name="chart" size={22} />
@@ -344,73 +387,38 @@ export function Workspace() {
             className="icon-button mobile-menu"
             onClick={() => setMobileNav(true)}
             aria-label="بازکردن منو"
+            aria-expanded={mobileNav}
+            aria-controls="primary-navigation"
             type="button"
           >
             <Icon name="menu" size={18} />
           </button>
-          <div className="topbar-title">
-            <h1>{titles[page].title}</h1>
-            <p>{titles[page].description}</p>
-          </div>
-          <div className="context-selectors">
-            <label className="select-wrap">
-              <Icon name="store" size={15} />
-              <span className="sr-only">کسب‌وکار</span>
-              <select
-                aria-label="کسب‌وکار"
-                value={activeBusiness.id}
-                onChange={(event) => {
-                  const business = businesses.find((item) => item.id === event.target.value);
-                  const primary =
-                    business?.branches.find((branch) => branch.isPrimary) ?? business?.branches[0];
-                  if (primary) void switchContext(primary.id);
-                }}
-              >
-                {businesses.map((business) => (
-                  <option key={business.id} value={business.id}>
-                    {business.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="ساخت کسب‌وکار جدید"
-              title="ساخت کسب‌وکار جدید"
-              onClick={() => setCreationDialog("business")}
-            >
-              <Icon name="plus" size={16} />
-            </button>
-            <label className="select-wrap">
-              <Icon name="branch" size={15} />
-              <span className="sr-only">شعبه</span>
-              <select
-                aria-label="شعبه"
-                value={session.activeBranch.id}
-                onChange={(event) => void switchContext(event.target.value)}
-              >
-                {activeBusiness.branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                    {branch.isPrimary ? " · اصلی" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="افزودن شعبه به این کسب‌وکار"
-              title="افزودن شعبه"
-              onClick={() => setCreationDialog("branch")}
-            >
-              <Icon name="plus" size={16} />
-            </button>
-          </div>
+          <ContextSelectors
+            businesses={businesses}
+            activeBusiness={activeBusiness}
+            activeBranch={session.activeBranch}
+            onSwitch={switchContext}
+            onCreateBusiness={() => setCreationDialog("business")}
+            onCreateBranch={() => setCreationDialog("branch")}
+          />
           <div className="topbar-actions">
+            <button
+              className="icon-button theme-toggle"
+              type="button"
+              aria-label={appearance.mode === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"}
+              aria-pressed={appearance.mode === "dark"}
+              title={appearance.mode === "dark" ? "تم روشن" : "تم تاریک"}
+              onClick={() =>
+                changeAppearance({
+                  ...appearance,
+                  mode: appearance.mode === "dark" ? "light" : "dark",
+                })
+              }
+            >
+              <Icon name={appearance.mode === "dark" ? "sun" : "moon"} size={18} />
+            </button>
             <span className="pill pill-success desktop-only">
-              <span aria-hidden="true">●</span> فضای امن شعبه
+              <Icon name="shield" size={13} /> فضای امن شعبه
             </span>
           </div>
         </header>
@@ -434,6 +442,106 @@ export function Workspace() {
         />
       )}
     </div>
+  );
+}
+
+function ContextSelectors({
+  businesses,
+  activeBusiness,
+  activeBranch,
+  onSwitch,
+  onCreateBusiness,
+  onCreateBranch,
+}: {
+  businesses: Business[];
+  activeBusiness: Business;
+  activeBranch: NonNullable<SessionData["activeBranch"]>;
+  onSwitch: (branchId: string) => Promise<void>;
+  onCreateBusiness: () => void;
+  onCreateBranch: () => void;
+}) {
+  function selectBusiness(businessId: string) {
+    const business = businesses.find((item) => item.id === businessId);
+    const primary = business?.branches.find((branch) => branch.isPrimary) ?? business?.branches[0];
+    if (primary) void onSwitch(primary.id);
+  }
+
+  function fields() {
+    return (
+      <div className="context-fields">
+        <div className="context-select-group">
+          <label className="select-wrap business-control">
+            <Icon name="store" size={16} />
+            <span className="sr-only">کسب‌وکار</span>
+            <select
+              aria-label="کسب‌وکار"
+              value={activeBusiness.id}
+              onChange={(event) => selectBusiness(event.target.value)}
+            >
+              {businesses.map((business) => (
+                <option key={business.id} value={business.id}>
+                  {business.name}
+                </option>
+              ))}
+            </select>
+            <Icon name="down" size={15} />
+          </label>
+          <button
+            className="icon-button context-add-button"
+            type="button"
+            aria-label="ساخت کسب‌وکار جدید"
+            title="ساخت کسب‌وکار جدید"
+            onClick={onCreateBusiness}
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+        <div className="context-select-group">
+          <label className="select-wrap branch-control">
+            <Icon name="branch" size={16} />
+            <span className="sr-only">شعبه</span>
+            <select
+              aria-label="شعبه"
+              value={activeBranch.id}
+              onChange={(event) => void onSwitch(event.target.value)}
+            >
+              {activeBusiness.branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                  {branch.isPrimary ? " · اصلی" : ""}
+                </option>
+              ))}
+            </select>
+            <Icon name="down" size={15} />
+          </label>
+          <button
+            className="icon-button context-add-button"
+            type="button"
+            aria-label="افزودن شعبه به این کسب‌وکار"
+            title="افزودن شعبه"
+            onClick={onCreateBranch}
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="context-selectors" aria-label="انتخاب کسب‌وکار و شعبه">
+        {fields()}
+      </div>
+      <details className="mobile-context-switcher">
+        <summary>
+          <Icon name="branch" size={16} />
+          <span>{activeBranch.name}</span>
+          <Icon name="down" size={15} />
+        </summary>
+        <div className="mobile-context-panel">{fields()}</div>
+      </details>
+    </>
   );
 }
 
@@ -621,59 +729,43 @@ function SectionView(props: Props) {
 function Overview({
   session,
   productTotal,
+  suppliers,
   priceLists,
-  history,
   loading,
   onSection,
   onSelectPriceList,
 }: Props) {
   const pending = priceLists.filter((item) => item.status === "in_review");
-  const approved = priceLists.filter((item) => item.status === "approved");
-  const lastPrice = history.find((item) => item.event_type === "product.purchase_price_approved");
   const active = session.activeBranch;
   return (
     <>
-      <section className="welcome-banner">
-        <div className="welcome-copy">
-          <span className="eyebrow">{dateFa(new Date(), "short")} · فضای کاری شما</span>
-          <h2>{active?.businessName}، خوش آمدید</h2>
-          <p>
-            {pending.length
-              ? `${new Intl.NumberFormat("fa-IR").format(pending.length)} قیمت‌نامه برای بازبینی دارید.`
-              : "قیمت‌نامهٔ جدید را وارد کنید یا فهرست کالاها را کامل کنید."}
-          </p>
-          <div className="welcome-actions">
-            <button className="btn btn-white" onClick={() => onSection("imports")} type="button">
-              <Icon name="upload" size={15} /> ورود قیمت‌نامه
-            </button>
-            <button
-              className="btn"
-              style={{
-                color: "white",
-                borderColor: "rgba(255,255,255,.35)",
-                background: "transparent",
-              }}
-              onClick={() => onSection("products")}
-              type="button"
-            >
-              <Icon name="box" size={15} /> فهرست کالاها
-            </button>
-          </div>
-        </div>
-        <div className="welcome-illustration" aria-hidden="true">
-          <Icon name="chart" size={42} />
-        </div>
-      </section>
-      <div className="section-heading">
+      <div className="page-heading overview-heading">
         <div>
-          <h2>وضعیت این شعبه</h2>
-          <p>اطلاعات فقط برای {active?.name} نمایش داده می‌شود.</p>
+          <h2>نمای کلی</h2>
+          <p>تغییرات قیمت خرید را ساده‌تر بررسی کنید.</p>
         </div>
-        <span className="pill">
-          <Icon name="shield" size={13} /> دسترسی محدود به شعبه
+        <span className="overview-branch-label">
+          <Icon name="branch" size={15} /> {active?.name}
         </span>
       </div>
-      <section className="stats-grid" aria-label="آمار شعبه">
+      <section className="upload-feature">
+        <div className="upload-feature-inner">
+          <div className="upload-feature-icon" aria-hidden="true">
+            <Icon name="upload" size={36} />
+          </div>
+          <h2>قیمت‌نامهٔ جدید</h2>
+          <p>فایل Excel یا CSV را بارگذاری کنید.</p>
+          <button
+            className="btn btn-primary upload-feature-button"
+            onClick={() => onSection("imports")}
+            type="button"
+          >
+            بارگذاری فایل <Icon name="upload" size={17} />
+          </button>
+          <span>پیش از اعمال تغییرها، همه‌چیز را بازبینی می‌کنید.</span>
+        </div>
+      </section>
+      <section className="stats-grid overview-stats" aria-label="آمار شعبه">
         <Stat
           icon="box"
           label="کالاهای ثبت‌شده"
@@ -681,98 +773,142 @@ function Overview({
           foot="در فهرست این شعبه"
         />
         <Stat
-          icon="file"
-          label="در انتظار بازبینی"
+          icon="users"
+          label="تأمین‌کنندگان"
+          value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(suppliers.length)}
+          foot="ثبت‌شده در این شعبه"
+        />
+        <Stat
+          icon="warning"
+          label="نیازمند بررسی"
           value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(pending.length)}
           foot={
             pending.reduce((sum, list) => sum + Number(list.pending_rows ?? 0), 0)
-              ? `${new Intl.NumberFormat("fa-IR").format(pending.reduce((sum, list) => sum + Number(list.pending_rows ?? 0), 0))} ردیف نیازمند بررسی`
-              : "همهٔ ردیف‌ها بررسی شده‌اند"
+              ? `${new Intl.NumberFormat("fa-IR").format(pending.reduce((sum, list) => sum + Number(list.pending_rows ?? 0), 0))} ردیف برای بازبینی`
+              : "قیمت‌نامهٔ بازبینی‌نشده‌ای ندارید"
           }
         />
-        <Stat
-          icon="check"
-          label="قیمت‌نامهٔ تأییدشده"
-          value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(approved.length)}
-          foot="تاریخچهٔ هر تغییر ثبت می‌شود"
-        />
-        <Stat
-          icon="chart"
-          label="آخرین تغییر خرید"
-          value={lastPrice ? dateFa(lastPrice.created_at) : "—"}
-          foot={lastPrice ? "ثبت‌شده در تاریخچهٔ این شعبه" : "هنوز تغییری تأیید نشده است"}
-        />
       </section>
-      <section className="dashboard-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>شروع سریع</h3>
-              <p>قدم بعدی را برای آماده‌سازی فهرست قیمت انتخاب کنید.</p>
-            </div>
+      <section className="panel recent-lists-panel">
+        <div className="panel-header">
+          <div>
+            <h3>آخرین قیمت‌نامه‌ها</h3>
+            <p>فایل‌های ثبت‌شده در {active?.name}</p>
           </div>
-          <div className="panel-body">
-            <div className="quick-grid">
-              <Quick
-                icon="box"
-                title="ورود کالاها"
-                text="فایل CSV یا Excel"
-                action={() => onSection("products")}
-              />
-              <Quick
-                icon="users"
-                title="ثبت تأمین‌کننده"
-                text="نام و یادداشت اختیاری"
-                action={() => onSection("suppliers")}
-              />
-              <Quick
-                icon="upload"
-                title="بارگذاری قیمت‌نامه"
-                text="نگاشت ستون‌ها و پیش‌نمایش"
-                action={() => onSection("imports")}
-              />
-              <Quick
-                icon="file"
-                title="بازبینی قیمت‌ها"
-                text="تأیید صریح پیش از اعمال"
-                action={() => {
-                  if (pending[0]) onSelectPriceList(pending[0].id);
-                  onSection("review");
-                }}
-              />
-            </div>
-          </div>
+          <button className="text-link" onClick={() => onSection("history")} type="button">
+            مشاهدهٔ همه <Icon name="chevron" size={14} />
+          </button>
         </div>
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>فعالیت اخیر</h3>
-              <p>رویدادهای ثبت‌شده در این شعبه</p>
+        {loading ? (
+          <Spinner label="در حال دریافت قیمت‌نامه‌ها" />
+        ) : priceLists.length ? (
+          <>
+            <div className="table-wrap recent-desktop-list">
+              <table className="data-table recent-lists-table">
+                <thead>
+                  <tr>
+                    <th>تأمین‌کننده</th>
+                    <th>تاریخ ورود</th>
+                    <th>ردیف</th>
+                    <th>وضعیت</th>
+                    <th>عملیات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {priceLists.slice(0, 5).map((list) => {
+                    const status = {
+                      in_review: { label: "نیازمند بررسی", className: "pill-warn" },
+                      approved: { label: "تأییدشده", className: "pill-success" },
+                      cancelled: { label: "لغوشده", className: "" },
+                      error: { label: "دارای خطا", className: "pill-danger" },
+                    }[list.status];
+                    return (
+                      <tr key={list.id}>
+                        <td className="recent-list-supplier">{list.supplier_name || list.title}</td>
+                        <td>{dateFa(list.created_at, "short")}</td>
+                        <td>{new Intl.NumberFormat("fa-IR").format(list.row_count)}</td>
+                        <td>
+                          <span className={`pill ${status.className}`}>{status.label}</span>
+                        </td>
+                        <td>
+                          {list.status === "in_review" ? (
+                            <button
+                              className="btn btn-ghost btn-small"
+                              onClick={() => {
+                                onSelectPriceList(list.id);
+                                onSection("review");
+                              }}
+                              type="button"
+                            >
+                              بازبینی
+                            </button>
+                          ) : (
+                            <span className="recent-list-complete">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <button className="text-link" onClick={() => onSection("history")} type="button">
-              مشاهدهٔ تاریخچه <Icon name="chevron" size={13} />
-            </button>
-          </div>
-          <div className="panel-body">
-            {history.length ? (
-              <div className="activity-list">
-                {history.slice(0, 4).map((item) => (
-                  <Activity key={item.id} event={item} />
-                ))}
+            <div className="recent-mobile-list" role="list" aria-label="آخرین قیمت‌نامه‌ها">
+              {priceLists.slice(0, 5).map((list) => {
+                const status = {
+                  in_review: { label: "نیازمند بررسی", className: "pill-warn" },
+                  approved: { label: "تأییدشده", className: "pill-success" },
+                  cancelled: { label: "لغوشده", className: "" },
+                  error: { label: "دارای خطا", className: "pill-danger" },
+                }[list.status];
+                return (
+                  <article className="recent-mobile-card" role="listitem" key={list.id}>
+                    <div className="recent-mobile-card-top">
+                      <strong>{list.supplier_name || list.title}</strong>
+                      <span className={`pill ${status.className}`}>{status.label}</span>
+                    </div>
+                    <div className="recent-mobile-card-bottom">
+                      <span>
+                        {dateFa(list.created_at, "short")} ·{" "}
+                        {new Intl.NumberFormat("fa-IR").format(list.row_count)} ردیف
+                      </span>
+                      {list.status === "in_review" ? (
+                        <button
+                          className="btn btn-ghost btn-small"
+                          onClick={() => {
+                            onSelectPriceList(list.id);
+                            onSection("review");
+                          }}
+                          type="button"
+                        >
+                          بازبینی
+                        </button>
+                      ) : (
+                        <span className="recent-list-complete">ثبت‌شده</span>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="empty-state recent-lists-empty">
+            <div>
+              <div className="empty-icon">
+                <Icon name="file" size={22} />
               </div>
-            ) : (
-              <div className="empty-state" style={{ minHeight: 130 }}>
-                <div>
-                  <div className="empty-icon">
-                    <Icon name="clock" />
-                  </div>
-                  <h3>هنوز فعالیتی ثبت نشده</h3>
-                  <p>با واردکردن کالا یا قیمت‌نامه، تاریخچهٔ این شعبه شکل می‌گیرد.</p>
-                </div>
-              </div>
-            )}
+              <h3>هنوز قیمت‌نامه‌ای ثبت نشده</h3>
+              <p>با بارگذاری فایل تأمین‌کننده، قیمت‌ها را یک‌جا بررسی کنید.</p>
+              <button
+                className="btn btn-primary btn-small"
+                onClick={() => onSection("imports")}
+                type="button"
+              >
+                بارگذاری قیمت‌نامه <Icon name="upload" size={14} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </section>
     </>
   );

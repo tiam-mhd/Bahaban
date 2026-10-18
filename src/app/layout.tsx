@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   applicationName: "بهابان",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f7f8f6" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0b3b3e" };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api, jsonBody } from "@/lib/client";
+import { loadGlobalTheme, saveGlobalTheme } from "@/lib/appearance";
 import { Icon } from "@/components/ui";
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
@@ -15,6 +16,11 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    setTheme(loadGlobalTheme());
+  }, []);
 
   useEffect(() => {
     if (seconds <= 0) return;
@@ -73,7 +79,21 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   };
 
   return (
-    <main className="auth-page">
+    <main className="auth-page" data-theme={theme}>
+      <button
+        className="icon-button auth-theme-toggle"
+        type="button"
+        aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"}
+        aria-pressed={theme === "dark"}
+        title={theme === "dark" ? "تم روشن" : "تم تاریک"}
+        onClick={() => {
+          const next = theme === "dark" ? "light" : "dark";
+          setTheme(next);
+          saveGlobalTheme(next);
+        }}
+      >
+        <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
+      </button>
       <aside className="auth-aside">
         <div className="brand">
           <span className="brand-mark">

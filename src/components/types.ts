@@ -100,3 +100,8 @@ export type BranchSettings = {
   rounding_step: string;
   currency: "IRR";
 };
+export type BranchAppearance = {
+  mode: "light" | "dark";
+  accentColor: string;
+  fontFamily: "vazirmatn" | "system";
+};

@@ -2030,6 +2030,67 @@ export function SettingsSection(props: Props) {
           <p>قواعد این صفحه فقط پیشنهاد می‌سازند و قیمت فروش را تغییر نمی‌دهند.</p>
         </div>
       </div>
+      <section className="settings-card appearance-card" aria-labelledby="appearance-title">
+        <div>
+          <h3 id="appearance-title">ظاهر سامانه</h3>
+          <p>
+            تنظیم‌های ظاهری شعبهٔ «{props.session.activeBranch?.name}» در همین مرورگر ذخیره می‌شوند.
+          </p>
+        </div>
+        <div className="appearance-controls">
+          <div className="appearance-control">
+            <span className="appearance-label">تم رنگی</span>
+            <div className="appearance-mode-options" role="group" aria-label="انتخاب تم رنگی">
+              <button
+                className={`appearance-mode-button${props.appearance.mode === "light" ? " active" : ""}`}
+                type="button"
+                aria-pressed={props.appearance.mode === "light"}
+                onClick={() => props.onAppearanceChange({ ...props.appearance, mode: "light" })}
+              >
+                <Icon name="sun" size={16} /> روشن
+              </button>
+              <button
+                className={`appearance-mode-button${props.appearance.mode === "dark" ? " active" : ""}`}
+                type="button"
+                aria-pressed={props.appearance.mode === "dark"}
+                onClick={() => props.onAppearanceChange({ ...props.appearance, mode: "dark" })}
+              >
+                <Icon name="moon" size={16} /> تاریک
+              </button>
+            </div>
+          </div>
+          <label className="appearance-control appearance-color-control">
+            <span className="appearance-label">رنگ اصلی شعبه</span>
+            <span className="appearance-color-field">
+              <input
+                type="color"
+                value={props.appearance.accentColor}
+                aria-label="انتخاب رنگ اصلی شعبه"
+                onChange={(event) =>
+                  props.onAppearanceChange({ ...props.appearance, accentColor: event.target.value })
+                }
+              />
+              <span dir="ltr">{props.appearance.accentColor.toUpperCase()}</span>
+            </span>
+          </label>
+          <label className="appearance-control">
+            <span className="appearance-label">قلم فارسی</span>
+            <select
+              className="appearance-select"
+              value={props.appearance.fontFamily}
+              onChange={(event) =>
+                props.onAppearanceChange({
+                  ...props.appearance,
+                  fontFamily: event.target.value === "system" ? "system" : "vazirmatn",
+                })
+              }
+            >
+              <option value="vazirmatn">وزیرمتن</option>
+              <option value="system">قلم سیستم</option>
+            </select>
+          </label>
+        </div>
+      </section>
       {!settings ? (
         <div className="panel">
           <Empty
