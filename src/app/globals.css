@@ -40,6 +40,15 @@ textarea {
 button {
   cursor: pointer;
 }
+.ui-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+.icon-slot {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+}
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -532,7 +541,11 @@ a {
   display: block;
   font-size: 11px;
 }
-.quick-action span {
+.quick-action-copy {
+  display: block;
+  min-width: 0;
+}
+.quick-action-copy > span {
   display: block;
   margin-top: 2px;
   color: var(--muted);
@@ -643,7 +656,7 @@ a {
   display: block;
   font-size: 11px;
 }
-.step-row span {
+.step-row > div > span {
   color: var(--muted);
   font-size: 10px;
 }
@@ -757,7 +770,10 @@ a {
   font-size: 11px;
   font-weight: 600;
 }
-.product-name span {
+.product-copy {
+  min-width: 0;
+}
+.product-copy > span {
   display: block;
   margin-top: 1px;
   color: var(--muted);
@@ -887,7 +903,7 @@ a {
   display: grid;
   gap: 3px;
 }
-.price-pair span {
+.price-pair > span {
   color: var(--muted);
   font-size: 11px;
 }
@@ -1731,7 +1747,7 @@ a {
   font-size: 16px;
 }
 
-.upload-feature-inner > span {
+.upload-feature-note {
   margin-top: 13px;
   color: var(--muted);
   font-size: 13px;
@@ -2604,7 +2620,7 @@ a {
     font-size: 13px;
   }
 
-  .upload-feature-inner > span {
+  .upload-feature-note {
     max-width: 260px;
     font-size: 10px;
   }

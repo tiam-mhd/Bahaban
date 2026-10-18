@@ -89,7 +89,7 @@ function Empty({
   return (
     <div className="empty-state">
       <div>
-        <div className="empty-icon">
+        <div className="empty-icon icon-slot">
           <Icon name={icon} size={22} />
         </div>
         <h3>{title}</h3>
@@ -182,8 +182,8 @@ export function ProductsSection(props: Props) {
                   <tr key={product.id}>
                     <td>
                       <div className="product-name">
-                        <span className="product-avatar">{product.name.slice(0, 1)}</span>
-                        <div>
+                        <span className="product-avatar icon-slot">{product.name.slice(0, 1)}</span>
+                        <div className="product-copy">
                           <strong>{product.name}</strong>
                           <span>
                             {[product.brand, product.model].filter(Boolean).join(" · ") ||
@@ -455,7 +455,7 @@ export function SuppliersSection(props: Props) {
                   <tr key={supplier.id}>
                     <td>
                       <div className="product-name">
-                        <span className="product-avatar">
+                        <span className="product-avatar icon-slot">
                           <Icon name="users" size={15} />
                         </span>
                         <strong>{supplier.name}</strong>
@@ -582,7 +582,7 @@ export function ImportsSection(props: Props) {
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
         <div className="panel-body" style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <span className="stat-icon">
+          <span className="stat-icon icon-slot">
             <Icon name="shield" />
           </span>
           <div>
@@ -1084,10 +1084,10 @@ function PriceListTable({
                 <tr key={list.id}>
                   <td>
                     <div className="product-name">
-                      <span className="product-avatar">
+                      <span className="product-avatar icon-slot">
                         <Icon name="file" size={15} />
                       </span>
-                      <div>
+                      <div className="product-copy">
                         <strong>{list.title}</strong>
                         <span>{list.source_file_name}</span>
                       </div>

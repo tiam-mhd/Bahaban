@@ -96,7 +96,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
       </button>
       <aside className="auth-aside">
         <div className="brand">
-          <span className="brand-mark">
+          <span className="brand-mark icon-slot">
             <Icon name="chart" size={23} />
           </span>
           <div>

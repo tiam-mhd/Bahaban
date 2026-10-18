@@ -63,7 +63,7 @@ const icons = {
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const IconComponent = icons[name as keyof typeof icons] ?? IconSparkles;
-  return <IconComponent aria-hidden="true" size={size} stroke={1.8} />;
+  return <IconComponent className="ui-icon" aria-hidden="true" size={size} stroke={1.8} />;
 }
 
 export function Modal({

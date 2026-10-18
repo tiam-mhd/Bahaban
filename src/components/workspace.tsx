@@ -319,7 +319,7 @@ export function Workspace() {
         aria-label="ناوبری اصلی"
       >
         <div className="brand">
-          <span className="brand-mark">
+          <span className="brand-mark icon-slot">
             <Icon name="chart" size={22} />
           </span>
           <div>
@@ -750,7 +750,7 @@ function Overview({
       </div>
       <section className="upload-feature">
         <div className="upload-feature-inner">
-          <div className="upload-feature-icon" aria-hidden="true">
+          <div className="upload-feature-icon icon-slot" aria-hidden="true">
             <Icon name="upload" size={36} />
           </div>
           <h2>قیمت‌نامهٔ جدید</h2>
@@ -762,7 +762,9 @@ function Overview({
           >
             بارگذاری فایل <Icon name="upload" size={17} />
           </button>
-          <span>پیش از اعمال تغییرها، همه‌چیز را بازبینی می‌کنید.</span>
+          <span className="upload-feature-note">
+            پیش از اعمال تغییرها، همه‌چیز را بازبینی می‌کنید.
+          </span>
         </div>
       </section>
       <section className="stats-grid overview-stats" aria-label="آمار شعبه">
@@ -929,7 +931,7 @@ function Stat({
     <article className="stat-card">
       <div className="stat-top">
         <span className="stat-label">{label}</span>
-        <span className="stat-icon">
+        <span className="stat-icon icon-slot">
           <Icon name={icon} size={17} />
         </span>
       </div>
@@ -952,10 +954,10 @@ function Quick({
 }) {
   return (
     <button className="quick-action" onClick={action} type="button">
-      <span className="quick-action-icon">
+      <span className="quick-action-icon icon-slot">
         <Icon name={icon} />
       </span>
-      <span>
+      <span className="quick-action-copy">
         <strong>{title}</strong>
         <span>{text}</span>
       </span>
