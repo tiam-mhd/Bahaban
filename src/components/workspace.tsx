@@ -17,6 +17,7 @@ import {
   saveGlobalTheme,
 } from "@/lib/appearance";
 import { AuthScreen } from "@/components/auth";
+import { CategoriesSection } from "@/components/categories";
 import { Icon, Modal, Spinner, Toast } from "@/components/ui";
 import {
   ProductsSection,
@@ -41,6 +42,7 @@ import type {
 const nav: { section: Section; label: string; icon: string }[] = [
   { section: "overview", label: "نمای کلی", icon: "grid" },
   { section: "products", label: "کالاها", icon: "box" },
+  { section: "categories", label: "دسته‌بندی کالاها", icon: "categories" },
   { section: "imports", label: "ورود قیمت‌نامه", icon: "upload" },
   { section: "review", label: "بازبینی تغییرها", icon: "file" },
   { section: "suppliers", label: "تأمین‌کنندگان", icon: "users" },
@@ -53,7 +55,11 @@ export type Props = {
   products: Product[];
   productTotal: number;
   suppliers: Supplier[];
+  supplierTotal: number;
   priceLists: PriceList[];
+  priceListTotal: number;
+  inReviewCount: number;
+  pendingRowCount: number;
   history: HistoryEvent[];
   settings: BranchSettings | null;
   loading: boolean;
@@ -75,7 +81,11 @@ export function Workspace() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productTotal, setProductTotal] = useState(0);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierTotal, setSupplierTotal] = useState(0);
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [priceListTotal, setPriceListTotal] = useState(0);
+  const [inReviewCount, setInReviewCount] = useState(0);
+  const [pendingRowCount, setPendingRowCount] = useState(0);
   const [history, setHistory] = useState<HistoryEvent[]>([]);
   const [settings, setSettings] = useState<BranchSettings | null>(null);
   const [selectedPriceList, setSelectedPriceList] = useState<string | null>(null);
@@ -104,7 +114,11 @@ export function Workspace() {
     setProducts([]);
     setProductTotal(0);
     setSuppliers([]);
+    setSupplierTotal(0);
     setPriceLists([]);
+    setPriceListTotal(0);
+    setInReviewCount(0);
+    setPendingRowCount(0);
     setHistory([]);
     setSettings(null);
     setSelectedPriceList(null);
@@ -128,9 +142,13 @@ export function Workspace() {
     try {
       const [productsData, suppliersData, listsData, historyData, settingsData] = await Promise.all(
         [
-          api<{ rows: Product[]; total: number }>("/api/products?size=50"),
-          api<{ rows: Supplier[] }>("/api/suppliers"),
-          api<{ rows: PriceList[] }>("/api/pricelists"),
+          api<{ rows: Product[]; total: number }>("/api/products?size=25"),
+          api<{ rows: Supplier[]; total: number }>("/api/suppliers?size=25"),
+          api<{
+            rows: PriceList[];
+            total: number;
+            summary: { total: number; inReviewCount: number; pendingRowCount: number };
+          }>("/api/pricelists?size=5"),
           api<{ rows: HistoryEvent[] }>("/api/history?size=8"),
           api<BranchSettings>("/api/settings"),
         ],
@@ -138,11 +156,17 @@ export function Workspace() {
       setProducts(productsData.rows);
       setProductTotal(productsData.total);
       setSuppliers(suppliersData.rows);
+      setSupplierTotal(suppliersData.total);
       setPriceLists(listsData.rows);
+      setPriceListTotal(listsData.summary.total);
+      setInReviewCount(listsData.summary.inReviewCount);
+      setPendingRowCount(listsData.summary.pendingRowCount);
       setHistory(historyData.rows);
       setSettings(settingsData);
       setSelectedPriceList((current) =>
-        current && listsData.rows.some((list) => list.id === current && list.status === "in_review")
+        current &&
+        (!listsData.rows.some((list) => list.id === current) ||
+          listsData.rows.some((list) => list.id === current && list.status === "in_review"))
           ? current
           : (listsData.rows.find((list) => list.status === "in_review")?.id ?? null),
       );
@@ -180,7 +204,7 @@ export function Workspace() {
     () => businesses.find((business) => business.id === session?.activeBranch?.businessId) ?? null,
     [businesses, session?.activeBranch?.businessId],
   );
-  const pendingLists = priceLists.filter((list) => list.status === "in_review").length;
+  const pendingLists = inReviewCount;
 
   useEffect(() => {
     if (!mobileNav) return;
@@ -282,7 +306,11 @@ export function Workspace() {
     products,
     productTotal,
     suppliers,
+    supplierTotal,
     priceLists,
+    priceListTotal,
+    inReviewCount,
+    pendingRowCount,
     history,
     settings,
     loading: loadingData,
@@ -711,6 +739,8 @@ function SectionView(props: Props) {
   switch (props.section) {
     case "products":
       return <ProductsSection {...props} />;
+    case "categories":
+      return <CategoriesSection key={props.session.activeBranch?.id} {...props} />;
     case "suppliers":
       return <SuppliersSection {...props} />;
     case "imports":
@@ -729,13 +759,15 @@ function SectionView(props: Props) {
 function Overview({
   session,
   productTotal,
-  suppliers,
+  supplierTotal,
   priceLists,
+  priceListTotal,
+  inReviewCount,
+  pendingRowCount,
   loading,
   onSection,
   onSelectPriceList,
 }: Props) {
-  const pending = priceLists.filter((item) => item.status === "in_review");
   const active = session.activeBranch;
   return (
     <>
@@ -777,16 +809,16 @@ function Overview({
         <Stat
           icon="users"
           label="تأمین‌کنندگان"
-          value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(suppliers.length)}
+          value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(supplierTotal)}
           foot="ثبت‌شده در این شعبه"
         />
         <Stat
           icon="warning"
           label="نیازمند بررسی"
-          value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(pending.length)}
+          value={loading ? "…" : new Intl.NumberFormat("fa-IR").format(inReviewCount)}
           foot={
-            pending.reduce((sum, list) => sum + Number(list.pending_rows ?? 0), 0)
-              ? `${new Intl.NumberFormat("fa-IR").format(pending.reduce((sum, list) => sum + Number(list.pending_rows ?? 0), 0))} ردیف برای بازبینی`
+            pendingRowCount
+              ? `${new Intl.NumberFormat("fa-IR").format(pendingRowCount)} ردیف برای بازبینی`
               : "قیمت‌نامهٔ بازبینی‌نشده‌ای ندارید"
           }
         />
@@ -795,7 +827,9 @@ function Overview({
         <div className="panel-header">
           <div>
             <h3>آخرین قیمت‌نامه‌ها</h3>
-            <p>فایل‌های ثبت‌شده در {active?.name}</p>
+            <p>
+              {new Intl.NumberFormat("fa-IR").format(priceListTotal)} قیمت‌نامه در {active?.name}
+            </p>
           </div>
           <button className="text-link" onClick={() => onSection("history")} type="button">
             مشاهدهٔ همه <Icon name="chevron" size={14} />
@@ -971,6 +1005,12 @@ function Activity({ event }: { event: HistoryEvent }) {
     "price_list.imported": "قیمت‌نامه وارد شد",
     "price_list.exported": "خروجی قیمت‌نامه دریافت شد",
     "product.created": "کالا ثبت شد",
+    "product.category_assigned": "کالا به دسته‌بندی افزوده شد",
+    "product.category_changed": "دسته‌بندی کالا تغییر کرد",
+    "product.category_removed": "کالا از دسته‌بندی خارج شد",
+    "product_category.created": "دسته‌بندی ساخته شد",
+    "product_category.updated": "دسته‌بندی ویرایش شد",
+    "product_category.deleted": "دسته‌بندی حذف شد",
     "products.imported": "فهرست کالاها وارد شد",
     "supplier.created": "تأمین‌کننده ثبت شد",
     "business.created": "کسب‌وکار ساخته شد",

@@ -1,5 +1,6 @@
 import { ApiError, fail, json, requireBranch } from "@/lib/api";
 import { query } from "@/lib/db";
+import { clampPage, parsePagination } from "@/lib/pagination";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,8 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const scope = await requireBranch(request);
     const { id } = await context.params;
     const url = new URL(request.url);
-    const page = Math.min(10_000, Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1));
-    const size = Math.min(200, Math.max(1, Number(url.searchParams.get("size") ?? 100) || 100));
+    const pagination = parsePagination(url.searchParams, { defaultSize: 25 });
     const list = await query(
       `SELECT l.id, l.title, l.source_file_name, l.source_date, l.currency, l.status, l.row_count,
         l.created_at, l.approved_at, s.name AS supplier_name
@@ -20,10 +20,21 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     );
     if (!list.rowCount)
       throw new ApiError(404, "قیمت‌نامه در این شعبه پیدا نشد.", "price_list_not_found");
-    const count = await query<{ count: string }>(
-      "SELECT count(*) FROM price_list_rows WHERE price_list_id = $1 AND branch_id = $2",
-      [id, scope.branchId],
-    );
+    const [count, summary] = await Promise.all([
+      query<{ count: string }>(
+      "SELECT count(*) FROM price_list_rows WHERE price_list_id = $1 AND branch_id = $2 AND business_id = $3",
+      [id, scope.branchId, scope.businessId],
+      ),
+      query<{ pending_count: number; ready_count: number; skipped_count: number }>(
+        `SELECT count(*) FILTER (WHERE NOT reviewed AND NOT skipped)::int AS pending_count,
+           count(*) FILTER (WHERE reviewed AND NOT skipped AND approved_at IS NULL)::int AS ready_count,
+           count(*) FILTER (WHERE skipped)::int AS skipped_count
+         FROM price_list_rows WHERE price_list_id = $1 AND branch_id = $2 AND business_id = $3`,
+        [id, scope.branchId, scope.businessId],
+      ),
+    ]);
+    const total = Number(count.rows[0].count);
+    const page = clampPage(pagination.page, pagination.size, total);
     const rows = await query(
       `SELECT r.id, r.source_row, r.source_name, r.source_sku, r.source_barcode, r.source_brand, r.source_model,
         r.source_unit, r.price_rial::text AS price_rial, r.previous_price_rial::text AS previous_price_rial,
@@ -39,14 +50,15 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
        FROM price_list_rows r LEFT JOIN products p ON p.id = r.matched_product_id AND p.branch_id = r.branch_id
        WHERE r.price_list_id = $1 AND r.branch_id = $2 AND r.business_id = $3
        ORDER BY r.source_row LIMIT $4 OFFSET $5`,
-      [id, scope.branchId, scope.businessId, size, (page - 1) * size],
+      [id, scope.branchId, scope.businessId, pagination.size, (page - 1) * pagination.size],
     );
     return json({
       list: list.rows[0],
       rows: rows.rows,
-      total: Number(count.rows[0].count),
+      total,
       page,
-      size,
+      size: pagination.size,
+      summary: summary.rows[0],
     });
   } catch (error) {
     return fail(error);

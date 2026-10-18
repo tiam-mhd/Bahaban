@@ -6,6 +6,7 @@ import {
   IconArrowUpRight,
   IconBell,
   IconBuildingStore,
+  IconCategory2,
   IconChartLine,
   IconCheck,
   IconChevronDown,
@@ -34,6 +35,7 @@ import {
 const icons = {
   grid: IconLayoutDashboard,
   box: IconPackage,
+  categories: IconCategory2,
   users: IconUsers,
   file: IconFileText,
   clock: IconClock,
@@ -153,6 +155,74 @@ export function Spinner({ label = "در حال بارگذاری" }: { label?: st
       <i className="spinner" aria-hidden="true" />
       {label}
     </output>
+  );
+}
+
+export function PaginationBar({
+  page,
+  size,
+  total,
+  onPageChange,
+  onSizeChange,
+  pageSizes = [10, 25, 50, 100],
+}: {
+  page: number;
+  size: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onSizeChange: (size: number) => void;
+  pageSizes?: number[];
+}) {
+  if (total <= 0) return null;
+  const pageCount = Math.max(1, Math.ceil(total / size));
+  const currentPage = Math.min(Math.max(1, page), pageCount);
+  const from = (currentPage - 1) * size + 1;
+  const to = Math.min(currentPage * size, total);
+  const number = (value: number) => new Intl.NumberFormat("fa-IR").format(value);
+  const availableSizes = [...new Set([...pageSizes, size])].sort((left, right) => left - right);
+  return (
+    <nav className="pagination-bar" aria-label="صفحه‌بندی فهرست">
+      <span className="pagination-range">
+        نمایش {number(from)} تا {number(to)} از {number(total)}
+      </span>
+      <label className="pagination-size">
+        <span>تعداد در صفحه</span>
+        <select
+          aria-label="تعداد آیتم در هر صفحه"
+          value={size}
+          onChange={(event) => onSizeChange(Number(event.target.value))}
+        >
+          {availableSizes.map((value) => (
+            <option value={value} key={value}>
+              {number(value)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="pagination-controls">
+        <button
+          className="btn btn-ghost btn-small"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          type="button"
+          aria-label="صفحهٔ قبلی"
+        >
+          قبلی
+        </button>
+        <span aria-live="polite">
+          {number(currentPage)} از {number(pageCount)}
+        </span>
+        <button
+          className="btn btn-ghost btn-small"
+          disabled={currentPage >= pageCount}
+          onClick={() => onPageChange(currentPage + 1)}
+          type="button"
+          aria-label="صفحهٔ بعدی"
+        >
+          بعدی
+        </button>
+      </div>
+    </nav>
   );
 }
 

@@ -24,7 +24,7 @@ import {
   type ImportMappingKey,
   type ImportTemplateKind,
 } from "@/lib/import-templates";
-import { Icon, Modal, Spinner } from "@/components/ui";
+import { Icon, Modal, PaginationBar, Spinner } from "@/components/ui";
 import type {
   BranchSettings,
   HistoryEvent,
@@ -129,30 +129,45 @@ function Empty({
 
 export function ProductsSection(props: Props) {
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState<Product[]>(props.products);
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [results, setResults] = useState<Product[]>([]);
   const [total, setTotal] = useState(props.productTotal);
   const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
   const [modal, setModal] = useState<"create" | "import" | null>(null);
 
   useEffect(() => {
-    setResults(props.products);
-    setTotal(props.productTotal);
-  }, [props.products, props.productTotal]);
+    let active = true;
+    if (page === 1 && !appliedSearch) {
+      setResults(props.products);
+      setTotal(props.productTotal);
+    }
+    setBusy(true);
+    const params = new URLSearchParams({ page: String(page), size: String(size), q: appliedSearch });
+    api<{ rows: Product[]; total: number }>(`/api/products?${params.toString()}`)
+      .then((data) => {
+        if (active) {
+          setResults(data.rows);
+          setTotal(data.total);
+        }
+      })
+      .catch((problem) => {
+        if (active)
+          props.onToast(problem instanceof Error ? problem.message : "بارگذاری کالاها انجام نشد.", true);
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [page, size, appliedSearch, props.products, props.productTotal, props.onToast]);
 
   async function find(event?: FormEvent) {
     event?.preventDefault();
-    setBusy(true);
-    try {
-      const data = await api<{ rows: Product[]; total: number }>(
-        `/api/products?size=100&q=${encodeURIComponent(search)}`,
-      );
-      setResults(data.rows);
-      setTotal(data.total);
-    } catch (problem) {
-      props.onToast(problem instanceof Error ? problem.message : "جست‌وجو انجام نشد.", true);
-    } finally {
-      setBusy(false);
-    }
+    setPage(1);
+    setAppliedSearch(search.trim());
   }
 
   return (
@@ -243,9 +258,13 @@ export function ProductsSection(props: Props) {
           </div>
         ) : (
           <Empty
-            icon="box"
-            title="هنوز کالایی ثبت نشده"
-            text="فهرست کالاهای فعلی را از CSV یا Excel وارد کنید یا چند کالا را دستی بسازید."
+            icon={appliedSearch ? "search" : "box"}
+            title={appliedSearch ? "کالایی پیدا نشد" : "هنوز کالایی ثبت نشده"}
+            text={
+              appliedSearch
+                ? "عبارت جست‌وجو را تغییر دهید."
+                : "فهرست کالاهای فعلی را از CSV یا Excel وارد کنید یا چند کالا را دستی بسازید."
+            }
             action={
               <div className="toolbar-group" style={{ justifyContent: "center" }}>
                 <button
@@ -266,14 +285,16 @@ export function ProductsSection(props: Props) {
             }
           />
         )}
-        {results.length > 0 && (
-          <div className="panel-header">
-            <span className="fine-print">نمایش حداکثر ۱۰۰ نتیجه در هر جست‌وجو</span>
-            <span className="fine-print">
-              {new Intl.NumberFormat("fa-IR").format(results.length)} ردیف
-            </span>
-          </div>
-        )}
+        <PaginationBar
+          page={page}
+          size={size}
+          total={total}
+          onPageChange={setPage}
+          onSizeChange={(nextSize) => {
+            setSize(nextSize);
+            setPage(1);
+          }}
+        />
       </div>
       {modal === "create" && (
         <ProductModal
@@ -281,7 +302,6 @@ export function ProductsSection(props: Props) {
           onSaved={async () => {
             setModal(null);
             await props.onRefresh();
-            await find();
             props.onToast("کالا ثبت شد.");
           }}
         />
@@ -295,6 +315,7 @@ export function ProductsSection(props: Props) {
           onDone={async (result) => {
             setModal(null);
             await props.onRefresh();
+            setPage(1);
             props.onToast(
               `${new Intl.NumberFormat("fa-IR").format(Number(result.imported))} کالا وارد شد.`,
             );
@@ -453,13 +474,59 @@ function Field({
 
 export function SuppliersSection(props: Props) {
   const [modal, setModal] = useState(false);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [total, setTotal] = useState(0);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [sort, setSort] = useState<"name" | "created">("name");
+  const [order, setOrder] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    if (page === 1 && !appliedSearch) {
+      setSuppliers(props.suppliers);
+      setTotal(props.supplierTotal);
+    }
+    setLoading(true);
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+      q: appliedSearch,
+      sort,
+      order,
+    });
+    api<{ rows: Supplier[]; total: number }>(`/api/suppliers?${params.toString()}`)
+      .then((data) => {
+        if (active) {
+          setSuppliers(data.rows);
+          setTotal(data.total);
+        }
+      })
+      .catch((problem) => {
+        if (active)
+          props.onToast(
+            problem instanceof Error ? problem.message : "بارگذاری تأمین‌کنندگان انجام نشد.",
+            true,
+          );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [page, size, appliedSearch, sort, order, props.suppliers, props.supplierTotal, props.onToast]);
+
   return (
     <>
       <div className="page-heading">
         <div>
           <h2>تأمین‌کنندگان</h2>
           <p>
-            {new Intl.NumberFormat("fa-IR").format(props.suppliers.length)} تأمین‌کننده در همین شعبه
+            {new Intl.NumberFormat("fa-IR").format(total)} تأمین‌کننده در همین شعبه
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setModal(true)} type="button">
@@ -467,7 +534,56 @@ export function SuppliersSection(props: Props) {
         </button>
       </div>
       <div className="panel">
-        {props.suppliers.length ? (
+        <div className="toolbar supplier-toolbar">
+          <form
+            className="toolbar-group"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setPage(1);
+              setAppliedSearch(search.trim());
+            }}
+          >
+            <label className="search-box">
+              <Icon name="search" size={15} />
+              <input
+                aria-label="جست‌وجو در تأمین‌کنندگان"
+                placeholder="نام یا یادداشت"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <button className="btn btn-ghost btn-small" type="submit">
+              جست‌وجو
+            </button>
+          </form>
+          <div className="toolbar-group">
+            <select
+              className="filter-select"
+              aria-label="مرتب‌سازی تأمین‌کنندگان"
+              value={sort}
+              onChange={(event) => {
+                setSort(event.target.value as typeof sort);
+                setPage(1);
+              }}
+            >
+              <option value="name">مرتب‌سازی: نام</option>
+              <option value="created">مرتب‌سازی: تاریخ ثبت</option>
+            </select>
+            <button
+              className="btn btn-ghost btn-small"
+              type="button"
+              onClick={() => {
+                setOrder((current) => (current === "asc" ? "desc" : "asc"));
+                setPage(1);
+              }}
+            >
+              {order === "asc" ? "صعودی" : "نزولی"}
+            </button>
+          </div>
+        </div>
+        {loading ? (
+          <Spinner label="در حال بارگذاری تأمین‌کنندگان" />
+        ) : suppliers.length ? (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -479,7 +595,7 @@ export function SuppliersSection(props: Props) {
                 </tr>
               </thead>
               <tbody>
-                {props.suppliers.map((supplier) => (
+                {suppliers.map((supplier) => (
                   <tr key={supplier.id}>
                     <td>
                       <div className="product-name">
@@ -499,6 +615,8 @@ export function SuppliersSection(props: Props) {
               </tbody>
             </table>
           </div>
+        ) : total > 0 ? (
+          <Empty icon="search" title="تأمین‌کننده‌ای پیدا نشد" text="جست‌وجو را تغییر دهید." />
         ) : (
           <Empty
             icon="users"
@@ -515,6 +633,16 @@ export function SuppliersSection(props: Props) {
             }
           />
         )}
+        <PaginationBar
+          page={page}
+          size={size}
+          total={total}
+          onPageChange={setPage}
+          onSizeChange={(nextSize) => {
+            setSize(nextSize);
+            setPage(1);
+          }}
+        />
       </div>
       {modal && (
         <SupplierModal
@@ -627,6 +755,7 @@ export function ImportsSection(props: Props) {
       </div>
       <PriceListTable
         lists={props.priceLists}
+        totalCount={props.priceListTotal}
         onReview={(id) => {
           props.onSelectPriceList(id);
           props.onSection("review");
@@ -731,6 +860,12 @@ function ImportModal({
   const [mapping, setMapping] = useState<Mapping>({});
   const [currency, setCurrency] = useState<"IRR" | "IRT">("IRR");
   const [supplierId, setSupplierId] = useState("");
+  const [supplierOptions, setSupplierOptions] = useState(suppliers);
+  const [supplierTotal, setSupplierTotal] = useState(suppliers.length);
+  const [supplierPage, setSupplierPage] = useState(1);
+  const [supplierSize, setSupplierSize] = useState(10);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [creatingSupplier, setCreatingSupplier] = useState(false);
   const [title, setTitle] = useState("");
@@ -738,6 +873,32 @@ function ImportModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const label = kind === "products" ? "ورود فهرست کالاها" : "ورود قیمت‌نامهٔ تأمین‌کننده";
+
+  useEffect(() => {
+    if (kind !== "price_list") return;
+    let active = true;
+    const params = new URLSearchParams({
+      page: String(supplierPage),
+      size: String(supplierSize),
+      q: supplierSearch,
+      sort: "name",
+      order: "asc",
+    });
+    api<{ rows: Supplier[]; total: number }>(`/api/suppliers?${params.toString()}`)
+      .then((data) => {
+        if (active) {
+          setSupplierOptions(data.rows);
+          setSupplierTotal(data.total);
+        }
+      })
+      .catch((problem) => {
+        if (active)
+          setError(problem instanceof Error ? problem.message : "فهرست تأمین‌کنندگان بارگذاری نشد.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [kind, supplierPage, supplierSize, supplierSearch]);
 
   async function upload() {
     if (!file) {
@@ -774,6 +935,21 @@ function ImportModal({
         jsonBody({ name: newSupplierName.trim() }),
       );
       setSupplierId(result.id);
+      const createdSupplier = {
+        id: result.id,
+        name: newSupplierName.trim(),
+        note: "",
+        created_at: new Date().toISOString(),
+      };
+      setSelectedSupplier(createdSupplier);
+      setSupplierOptions((current) =>
+        current.some((supplier) => supplier.id === result.id)
+          ? current
+          : [...current, createdSupplier].sort((left, right) => left.name.localeCompare(right.name, "fa")),
+      );
+      setSupplierTotal((current) => current + 1);
+      setSupplierSearch("");
+      setSupplierPage(1);
       setNewSupplierName("");
       await onRefresh();
     } catch (problem) {
@@ -846,19 +1022,55 @@ function ImportModal({
         {kind === "price_list" && (
           <>
             <Field label="تأمین‌کننده" full required>
-              <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)}>
-                <option value="">انتخاب تأمین‌کننده</option>
-                {suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.name}
-                  </option>
-                ))}
-              </select>
+              <div className="supplier-chooser">
+                <label className="search-box">
+                  <Icon name="search" size={15} />
+                  <input
+                    aria-label="جست‌وجوی تأمین‌کننده"
+                    placeholder="نام تأمین‌کننده را جست‌وجو کنید"
+                    value={supplierSearch}
+                    onChange={(event) => {
+                      setSupplierSearch(event.target.value);
+                      setSupplierPage(1);
+                    }}
+                  />
+                </label>
+                <select
+                  value={supplierId}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    setSupplierId(nextId);
+                    setSelectedSupplier(supplierOptions.find((item) => item.id === nextId) ?? null);
+                  }}
+                >
+                  <option value="">انتخاب تأمین‌کننده</option>
+                  {selectedSupplier && !supplierOptions.some((item) => item.id === selectedSupplier.id) && (
+                    <option value={selectedSupplier.id}>{selectedSupplier.name}</option>
+                  )}
+                  {supplierOptions.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+                <PaginationBar
+                  page={supplierPage}
+                  size={supplierSize}
+                  total={supplierTotal}
+                  onPageChange={setSupplierPage}
+                  onSizeChange={(nextSize) => {
+                    setSupplierSize(nextSize);
+                    setSupplierPage(1);
+                  }}
+                />
+              </div>
             </Field>
-            {suppliers.length === 0 && (
+            {supplierTotal === 0 && (
               <div className="field full">
                 <span className="field-hint">
-                  هنوز تأمین‌کننده‌ای در این شعبه ثبت نشده است. از همین‌جا نام او را اضافه کنید.
+                  {supplierSearch
+                    ? "تأمین‌کننده‌ای با این عبارت پیدا نشد؛ نام را بررسی کنید یا تأمین‌کنندهٔ جدید را ثبت کنید."
+                    : "هنوز تأمین‌کننده‌ای در این شعبه ثبت نشده است. از همین‌جا نام او را اضافه کنید."}
                 </span>
               </div>
             )}
@@ -1080,22 +1292,64 @@ function StatusPill({ status }: { status: PriceList["status"] }) {
 
 function PriceListTable({
   lists,
+  totalCount,
   onReview,
   onToast,
   onRefresh,
 }: {
+  // The overview snapshot is used only as a refresh signal; this table owns its paged query.
   lists: PriceList[];
+  totalCount: number;
   onReview: (id: string) => void;
   onToast: Props["onToast"];
   onRefresh: Props["onRefresh"];
 }) {
   const [busyId, setBusyId] = useState("");
+  const [rows, setRows] = useState<PriceList[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(10);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [status, setStatus] = useState<"all" | PriceList["status"]>("all");
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (page === 1 && status === "all" && !appliedSearch) {
+      setRows(lists);
+      setTotal(totalCount);
+    }
+    setLoading(true);
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+      q: appliedSearch,
+      status,
+    });
+    try {
+      const data = await api<{ rows: PriceList[]; total: number }>(
+        `/api/pricelists?${params.toString()}`,
+      );
+      setRows(data.rows);
+      setTotal(data.total);
+    } catch (problem) {
+      onToast(problem instanceof Error ? problem.message : "بارگذاری قیمت‌نامه‌ها انجام نشد.", true);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, size, appliedSearch, status, onToast, lists, totalCount]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   async function cancel(id: string) {
     if (!window.confirm("این قیمت‌نامه لغو شود؟ قیمت جاری تغییر نمی‌کند.")) return;
     setBusyId(id);
     try {
       await api(`/api/pricelists/${encodeURIComponent(id)}/cancel`, { method: "POST" });
       await onRefresh();
+      await load();
       onToast("قیمت‌نامه لغو شد.");
     } catch (problem) {
       onToast(problem instanceof Error ? problem.message : "لغو قیمت‌نامه انجام نشد.", true);
@@ -1105,7 +1359,47 @@ function PriceListTable({
   }
   return (
     <div className="panel">
-      {lists.length ? (
+      <div className="toolbar price-list-toolbar">
+        <form
+          className="toolbar-group"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setPage(1);
+            setAppliedSearch(search.trim());
+          }}
+        >
+          <label className="search-box">
+            <Icon name="search" size={15} />
+            <input
+              aria-label="جست‌وجو در قیمت‌نامه‌ها"
+              placeholder="عنوان، نام فایل یا تأمین‌کننده"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <button className="btn btn-ghost btn-small" type="submit">
+            جست‌وجو
+          </button>
+        </form>
+        <select
+          className="filter-select"
+          aria-label="فیلتر وضعیت قیمت‌نامه‌ها"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value as typeof status);
+            setPage(1);
+          }}
+        >
+          <option value="all">همهٔ وضعیت‌ها</option>
+          <option value="in_review">در حال بازبینی</option>
+          <option value="approved">تأییدشده</option>
+          <option value="cancelled">لغوشده</option>
+          <option value="error">دارای خطا</option>
+        </select>
+      </div>
+      {loading ? (
+        <Spinner label="در حال بارگذاری قیمت‌نامه‌ها" />
+      ) : rows.length ? (
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -1119,7 +1413,7 @@ function PriceListTable({
               </tr>
             </thead>
             <tbody>
-              {lists.map((list) => (
+              {rows.map((list) => (
                 <tr key={list.id}>
                   <td>
                     <div className="product-name">
@@ -1193,6 +1487,8 @@ function PriceListTable({
             </tbody>
           </table>
         </div>
+      ) : total > 0 ? (
+        <Empty icon="search" title="قیمت‌نامه‌ای پیدا نشد" text="جست‌وجو یا فیلتر را تغییر دهید." />
       ) : (
         <Empty
           icon="file"
@@ -1200,25 +1496,84 @@ function PriceListTable({
           text="فایل تأمین‌کننده را بارگذاری کنید تا ستون‌ها را نگاشت و ردیف‌ها را بازبینی کنید."
         />
       )}
+      <PaginationBar
+        page={page}
+        size={size}
+        total={total}
+        onPageChange={setPage}
+        onSizeChange={(nextSize) => {
+          setSize(nextSize);
+          setPage(1);
+        }}
+      />
     </div>
   );
 }
 
 export function ReviewSection(props: Props) {
-  const openLists = props.priceLists.filter((list) => list.status === "in_review");
-  const [activeId, setActiveId] = useState(props.selectedPriceList ?? openLists[0]?.id ?? "");
+  const [openLists, setOpenLists] = useState<PriceList[]>([]);
+  const [openListTotal, setOpenListTotal] = useState(0);
+  const [openListPage, setOpenListPage] = useState(1);
+  const [openListSize, setOpenListSize] = useState(10);
+  const [openListSearch, setOpenListSearch] = useState("");
+  const [appliedOpenListSearch, setAppliedOpenListSearch] = useState("");
+  const [loadingOpenLists, setLoadingOpenLists] = useState(true);
+  const [activeId, setActiveId] = useState(props.selectedPriceList ?? "");
   const [detail, setDetail] = useState<{
     list: PriceListDetail;
     rows: PriceRow[];
     total: number;
     page: number;
     size: number;
+    summary: { pending_count: number; ready_count: number; skipped_count: number };
   } | null>(null);
   const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (openListPage === 1 && !appliedOpenListSearch) {
+      setOpenLists(props.priceLists.filter((list) => list.status === "in_review").slice(0, openListSize));
+    }
+    setLoadingOpenLists(true);
+    const params = new URLSearchParams({
+      status: "in_review",
+      page: String(openListPage),
+      size: String(openListSize),
+      q: appliedOpenListSearch,
+    });
+    api<{ rows: PriceList[]; total: number }>(`/api/pricelists?${params.toString()}`)
+      .then((data) => {
+        if (active) {
+          setOpenLists(data.rows);
+          setOpenListTotal(data.total);
+        }
+      })
+      .catch((problem) => {
+        if (active)
+          props.onToast(
+            problem instanceof Error ? problem.message : "فهرست قیمت‌نامه‌ها بارگذاری نشد.",
+            true,
+          );
+      })
+      .finally(() => {
+        if (active) setLoadingOpenLists(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [openListPage, openListSize, appliedOpenListSearch, props.priceLists, props.onToast]);
+
+  useEffect(() => {
+    if (!activeId && openLists.length) {
+      setActiveId(openLists[0].id);
+      props.onSelectPriceList(openLists[0].id);
+    }
+  }, [activeId, openLists, props.onSelectPriceList]);
 
   useEffect(() => {
     if (props.selectedPriceList && props.selectedPriceList !== activeId) {
@@ -1241,7 +1596,8 @@ export function ReviewSection(props: Props) {
         total: number;
         page: number;
         size: number;
-      }>(`/api/pricelists/${encodeURIComponent(activeId)}?page=${page}&size=100`);
+        summary: { pending_count: number; ready_count: number; skipped_count: number };
+      }>(`/api/pricelists/${encodeURIComponent(activeId)}?page=${page}&size=${size}`);
       setDetail(data);
       setSelectedRows(
         (old) =>
@@ -1262,7 +1618,7 @@ export function ReviewSection(props: Props) {
     } finally {
       setLoading(false);
     }
-  }, [activeId, page, props.onToast]);
+  }, [activeId, page, size, props.onToast]);
 
   useEffect(() => {
     void load();
@@ -1299,8 +1655,6 @@ export function ReviewSection(props: Props) {
     (sum, row) => sum + (BigInt(row.price_rial ?? "0") - BigInt(row.current_cost_rial ?? "0")),
     0n,
   );
-  const totalPages = detail ? Math.max(1, Math.ceil(detail.total / detail.size)) : 1;
-
   async function approve() {
     setBusy(true);
     try {
@@ -1338,7 +1692,7 @@ export function ReviewSection(props: Props) {
     );
   }
 
-  if (!openLists.length && !detail)
+  if (!loadingOpenLists && openListTotal === 0 && !detail)
     return (
       <Empty
         icon="check"
@@ -1353,9 +1707,31 @@ export function ReviewSection(props: Props) {
           <h2>بازبینی قیمت‌ها</h2>
           <p>تطبیق پیشنهادی را بررسی کنید؛ ردیف مبهم خودکار تأیید نمی‌شود.</p>
         </div>
-        {openLists.length > 1 && (
-          <label className="field" style={{ minWidth: 240 }}>
-            <span className="sr-only">انتخاب قیمت‌نامه</span>
+        {openListTotal > 0 && (
+          <div className="review-list-picker">
+            {openListTotal > 1 && (
+              <form
+                className="toolbar-group"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setAppliedOpenListSearch(openListSearch.trim());
+                  setOpenListPage(1);
+                }}
+              >
+                <label className="search-box">
+                  <Icon name="search" size={15} />
+                  <input
+                    aria-label="جست‌وجوی قیمت‌نامه‌های در حال بازبینی"
+                    placeholder="جست‌وجوی قیمت‌نامه"
+                    value={openListSearch}
+                    onChange={(event) => setOpenListSearch(event.target.value)}
+                  />
+                </label>
+                <button className="btn btn-ghost btn-small" type="submit">
+                  جست‌وجو
+                </button>
+              </form>
+            )}
             <select
               className="filter-select"
               aria-label="قیمت‌نامه برای بازبینی"
@@ -1367,16 +1743,33 @@ export function ReviewSection(props: Props) {
                 setSelectedRows(new Set());
               }}
             >
+              {detail && !openLists.some((list) => list.id === detail.list.id) && (
+                <option value={detail.list.id}>{detail.list.title} · {detail.list.supplier_name}</option>
+              )}
               {openLists.map((list) => (
                 <option key={list.id} value={list.id}>
                   {list.title} · {list.supplier_name}
                 </option>
               ))}
             </select>
-          </label>
+            {openListTotal > 1 && (
+              <PaginationBar
+                page={openListPage}
+                size={openListSize}
+                total={openListTotal}
+                onPageChange={setOpenListPage}
+                onSizeChange={(nextSize) => {
+                  setOpenListSize(nextSize);
+                  setOpenListPage(1);
+                }}
+              />
+            )}
+          </div>
         )}
       </div>
-      {loading ? (
+      {loadingOpenLists && !activeId ? (
+        <Spinner label="در حال دریافت قیمت‌نامه‌های باز" />
+      ) : loading ? (
         <Spinner label="در حال بارگذاری ردیف‌های قیمت‌نامه" />
       ) : detail ? (
         <>
@@ -1401,19 +1794,19 @@ export function ReviewSection(props: Props) {
               <span>نیازمند بازبینی</span>
               <strong>
                 {new Intl.NumberFormat("fa-IR").format(
-                  detail.rows.filter((row) => !row.reviewed && !row.skipped).length,
+                  detail.summary.pending_count,
                 )}
               </strong>
             </div>
             <div className="review-kpi">
               <span>آمادهٔ تأیید</span>
-              <strong>{new Intl.NumberFormat("fa-IR").format(reviewable.length)}</strong>
+              <strong>{new Intl.NumberFormat("fa-IR").format(detail.summary.ready_count)}</strong>
             </div>
             <div className="review-kpi">
               <span>کنارگذاشته‌شده</span>
               <strong>
                 {new Intl.NumberFormat("fa-IR").format(
-                  detail.rows.filter((row) => row.skipped).length,
+                  detail.summary.skipped_count,
                 )}
               </strong>
             </div>
@@ -1465,34 +1858,20 @@ export function ReviewSection(props: Props) {
                     </tbody>
                   </table>
                 </div>
-                <div className="pagination">
-                  <button
-                    className="btn btn-ghost btn-small"
-                    disabled={page <= 1}
-                    onClick={() => {
-                      setPage((value) => value - 1);
-                      setSelectedRows(new Set());
-                    }}
-                    type="button"
-                  >
-                    قبلی
-                  </button>
-                  <span>
-                    صفحهٔ {new Intl.NumberFormat("fa-IR").format(page)} از{" "}
-                    {new Intl.NumberFormat("fa-IR").format(totalPages)}
-                  </span>
-                  <button
-                    className="btn btn-ghost btn-small"
-                    disabled={page >= totalPages}
-                    onClick={() => {
-                      setPage((value) => value + 1);
-                      setSelectedRows(new Set());
-                    }}
-                    type="button"
-                  >
-                    بعدی
-                  </button>
-                </div>
+                <PaginationBar
+                  page={page}
+                  size={size}
+                  total={detail.total}
+                  onPageChange={(nextPage) => {
+                    setPage(nextPage);
+                    setSelectedRows(new Set());
+                  }}
+                  onSizeChange={(nextSize) => {
+                    setSize(nextSize);
+                    setPage(1);
+                    setSelectedRows(new Set());
+                  }}
+                />
               </>
             ) : (
               <Empty
@@ -1888,17 +2267,22 @@ function ReviewRow({
 }
 
 export function HistorySection(props: Props) {
-  const [events, setEvents] = useState<HistoryEvent[]>(props.history);
+  const [events, setEvents] = useState<HistoryEvent[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
-    setEvents(props.history);
-  }, [props.history]);
-  useEffect(() => {
     let active = true;
+    if (page === 1) setEvents(props.history);
     setLoading(true);
-    api<{ rows: HistoryEvent[] }>("/api/history?size=100")
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    api<{ rows: HistoryEvent[]; total: number }>(`/api/history?${params.toString()}`)
       .then((data) => {
-        if (active) setEvents(data.rows);
+        if (active) {
+          setEvents(data.rows);
+          setTotal(data.total);
+        }
       })
       .catch((problem) => {
         if (active)
@@ -1913,7 +2297,7 @@ export function HistorySection(props: Props) {
     return () => {
       active = false;
     };
-  }, [props.onToast]);
+  }, [page, size, props.history, props.onToast]);
   return (
     <>
       <div className="page-heading">
@@ -1953,6 +2337,16 @@ export function HistorySection(props: Props) {
             text="پس از ورود فایل یا تأیید تغییر قیمت، رویداد اینجا ثبت می‌شود."
           />
         )}
+        <PaginationBar
+          page={page}
+          size={size}
+          total={total}
+          onPageChange={setPage}
+          onSizeChange={(nextSize) => {
+            setSize(nextSize);
+            setPage(1);
+          }}
+        />
       </div>
       <div className="section-heading">
         <div>
@@ -1962,6 +2356,7 @@ export function HistorySection(props: Props) {
       </div>
       <PriceListTable
         lists={props.priceLists}
+        totalCount={props.priceListTotal}
         onReview={(id) => {
           props.onSelectPriceList(id);
           props.onSection("review");
@@ -1977,6 +2372,12 @@ function HistoryRow({ event }: { event: HistoryEvent }) {
   const eventLabels: Record<string, string> = {
     "business.created": "ساخت کسب‌وکار",
     "product.created": "افزودن کالا",
+    "product.category_assigned": "افزودن کالا به دسته‌بندی",
+    "product.category_changed": "تغییر دسته‌بندی کالا",
+    "product.category_removed": "خروج کالا از دسته‌بندی",
+    "product_category.created": "ساخت دسته‌بندی کالا",
+    "product_category.updated": "ویرایش دسته‌بندی کالا",
+    "product_category.deleted": "حذف دسته‌بندی کالا",
     "products.imported": "ورود فهرست کالاها",
     "supplier.created": "افزودن تأمین‌کننده",
     "price_list.imported": "ورود قیمت‌نامه",
@@ -1994,13 +2395,17 @@ function HistoryRow({ event }: { event: HistoryEvent }) {
   const context =
     typeof details.productName === "string"
       ? details.productName
-      : typeof details.title === "string"
-        ? details.title
-        : typeof details.fileName === "string"
-          ? details.fileName
-          : typeof details.rows === "number"
-            ? `${new Intl.NumberFormat("fa-IR").format(details.rows)} ردیف`
-            : "—";
+      : typeof details.categoryName === "string"
+        ? details.categoryName
+        : typeof details.name === "string"
+          ? details.name
+          : typeof details.title === "string"
+            ? details.title
+            : typeof details.fileName === "string"
+              ? details.fileName
+              : typeof details.rows === "number"
+                ? `${new Intl.NumberFormat("fa-IR").format(details.rows)} ردیف`
+                : "—";
   return (
     <tr>
       <td>

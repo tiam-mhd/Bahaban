@@ -1,6 +1,7 @@
 export type Section =
   | "overview"
   | "products"
+  | "categories"
   | "suppliers"
   | "imports"
   | "review"
@@ -33,6 +34,16 @@ export type Product = {
   is_active: boolean;
   version: number;
   created_at: string;
+};
+export type ProductCategory = {
+  id: string;
+  name: string;
+  description: string;
+  parent_id: string | null;
+  created_at: string;
+  updated_at: string;
+  product_count: number;
+  child_count: number;
 };
 export type Supplier = { id: string; name: string; note: string; created_at: string };
 export type PriceList = {

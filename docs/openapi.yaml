@@ -96,12 +96,125 @@ paths:
         "200": { description: Paginated products and branch-local result count }
     post:
       summary: Add a product to the active branch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 200 }
+                categoryId: { type: [string, "null"], format: uuid, description: Optional; omitted or null leaves the product uncategorized. }
       responses:
         "201": { description: Product created and audit event recorded }
+  /categories:
+    get:
+      summary: List a page of active-branch product categories with direct product and child counts
+      parameters:
+        - { in: query, name: q, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: type, schema: { type: string, enum: [all, root, child] } }
+        - { in: query, name: products, schema: { type: string, enum: [all, has, empty] } }
+        - { in: query, name: sort, schema: { type: string, enum: [name, products, created] } }
+        - { in: query, name: order, schema: { type: string, enum: [asc, desc] } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { in: query, name: all, schema: { type: boolean }, description: Internal category-picker option to return every category. }
+      responses:
+        "200": { description: Paginated categories, required ancestor context rows, total count and uncategorized product count }
+    post:
+      summary: Create a category or subcategory in the active branch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                description: { type: string, maxLength: 1000 }
+                parentId: { type: [string, "null"], format: uuid }
+      responses:
+        "201": { description: Category created and audited }
+        "409": { description: A category with this name already exists at the same level }
+  /categories/{id}:
+    get:
+      summary: Read category details and direct product and child counts
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: Category details and a paginated list of direct child categories }
+        "404": { description: Category not found in the active branch }
+    patch:
+      summary: Rename, describe or move a category within the active branch
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                description: { type: string, maxLength: 1000 }
+                parentId: { type: [string, "null"], format: uuid }
+      responses:
+        "200": { description: Category updated and audited }
+        "409": { description: Duplicate name or move would create a cycle }
+    delete:
+      summary: Delete a leaf category and leave its products uncategorized
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Category deleted and product assignments cleared }
+        "409": { description: Category still has child categories }
+  /categories/{id}/products:
+    get:
+      summary: List products assigned to a category, or products available to add or move
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: available, schema: { type: boolean }, description: If true, excludes products already assigned to this category. }
+        - { in: query, name: q, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { in: query, name: status, schema: { type: string, enum: [all, active, inactive] } }
+        - { in: query, name: sort, schema: { type: string, enum: [name, sku, created, cost] } }
+        - { in: query, name: order, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        "200": { description: Paginated products scoped to the active branch }
+    post:
+      summary: Assign or move an existing product into a category
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [productId], properties: { productId: { type: string, format: uuid } } }
+      responses:
+        "200": { description: Product assigned and action audited }
+        "404": { description: Category or product not found in the active branch }
+    delete:
+      summary: Remove a product from the category and leave it uncategorized
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: productId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Product assignment removed and action audited }
   /suppliers:
     get:
-      summary: List active-branch suppliers
-      responses: { "200": { description: Branch-local supplier list } }
+      summary: List a page of active-branch suppliers
+      parameters:
+        - { in: query, name: q, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { in: query, name: sort, schema: { type: string, enum: [name, created] } }
+        - { in: query, name: order, schema: { type: string, enum: [asc, desc] } }
+      responses: { "200": { description: Paginated branch-local suppliers and total count } }
     post:
       summary: Create an active-branch supplier
       responses: { "201": { description: Supplier created and audit event recorded } }
@@ -130,15 +243,20 @@ paths:
         "409": { description: Duplicate file, row key or stale draft conflict }
   /pricelists:
     get:
-      summary: List active-branch price lists
-      responses: { "200": { description: Price lists, supplier, review counts and status } }
+      summary: List a page of active-branch price lists
+      parameters:
+        - { in: query, name: q, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: status, schema: { type: string, enum: [all, in_review, approved, cancelled, error] } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses: { "200": { description: Paginated price lists, supplier, review counts, total and unfiltered dashboard summary } }
   /pricelists/{id}:
     get:
       summary: Read an active-branch price list and a page of review rows
       parameters:
         - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
         - { in: query, name: page, schema: { type: integer, minimum: 1 } }
-        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
       responses:
         "200": { description: List details, row warnings and branch-local match suggestions }
         "404": { description: Not found in the active branch }
@@ -178,7 +296,7 @@ paths:
       parameters:
         - { in: query, name: page, schema: { type: integer, minimum: 1 } }
         - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
-      responses: { "200": { description: Paginated branch event history } }
+      responses: { "200": { description: Paginated branch event history with total count } }
   /settings:
     get:
       summary: Read active-branch pricing proposal settings

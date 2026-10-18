@@ -1,6 +1,8 @@
 import { ApiError, fail, json, readJson, requireSameOrigin, requireBranch } from "@/lib/api";
 import { recordAudit } from "@/lib/audit";
 import { transaction, query } from "@/lib/db";
+import { normalizeText } from "@/lib/domain";
+import { clampPage, parsePagination } from "@/lib/pagination";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,11 +10,31 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const scope = await requireBranch(request);
-    const result = await query(
-      `SELECT id, name, note, created_at FROM suppliers WHERE branch_id = $1 AND archived_at IS NULL ORDER BY name LIMIT 500`,
-      [scope.branchId],
+    const url = new URL(request.url);
+    const pagination = parsePagination(url.searchParams, { defaultSize: 25 });
+    const search = normalizeText(url.searchParams.get("q") ?? "").slice(0, 100);
+    const sort = url.searchParams.get("sort") ?? "name";
+    const order = url.searchParams.get("order") === "desc" ? "DESC" : "ASC";
+    const sortSql: Record<string, string> = {
+      name: `lower(name) ${order}, created_at DESC`,
+      created: `created_at ${order}, lower(name) ASC`,
+    };
+    if (!sortSql[sort]) throw new ApiError(400, "مرتب‌سازی تأمین‌کننده معتبر نیست.", "invalid_supplier_sort");
+    const values: unknown[] = [scope.branchId];
+    let where = "branch_id = $1 AND archived_at IS NULL";
+    if (search) {
+      values.push(`%${search}%`);
+      where += ` AND (lower(name) ILIKE $2 OR lower(note) ILIKE $2)`;
+    }
+    const count = await query<{ count: string }>(`SELECT count(*) FROM suppliers WHERE ${where}`, values);
+    const total = Number(count.rows[0].count);
+    const page = clampPage(pagination.page, pagination.size, total);
+    const rows = await query(
+      `SELECT id, name, note, created_at FROM suppliers WHERE ${where}
+       ORDER BY ${sortSql[sort]} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, pagination.size, (page - 1) * pagination.size],
     );
-    return json({ rows: result.rows });
+    return json({ rows: rows.rows, total, page, size: pagination.size });
   } catch (error) {
     return fail(error);
   }
