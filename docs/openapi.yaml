@@ -1,0 +1,215 @@
+openapi: 3.1.0
+info:
+  title: Bahaban API
+  version: 0.1.0
+  description: |
+    Private API contract for the Bahaban first release. All business operations are scoped to the
+    authenticated session's active branch. `businessId` or `branchId` in a client request is never
+    treated as authorization. This file is not served by a public API-docs endpoint.
+servers:
+  - url: /api
+security:
+  - sessionCookie: []
+paths:
+  /auth/otp/request:
+    post:
+      security: []
+      summary: Request a one-time sign-in code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [phone], properties: { phone: { type: string, example: "۰۹۱۲۱۲۳۴۵۶۷" } } }
+      responses:
+        "202":
+          description: Same response for registered and unregistered phone numbers
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: string }, developmentCode: { type: string, description: "Only returned by the local mock provider outside production." } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/otp/verify:
+    post:
+      security: []
+      summary: Verify a one-time sign-in code and set the session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [phone, code], properties: { phone: { type: string }, code: { type: string } } }
+      responses:
+        "200": { description: Authenticated; an HttpOnly session cookie is set }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /auth/session:
+    get:
+      security: []
+      summary: Read current account and authorized business/branch choices
+      responses:
+        "200": { description: Session state, business memberships and active branch }
+  /auth/logout:
+    post:
+      summary: Revoke the current session
+      responses:
+        "200": { description: Session revoked and cookie cleared }
+  /businesses:
+    post:
+      summary: Create a business, owner membership, primary branch and branch settings atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string, minLength: 2, maxLength: 120 } } }
+      responses:
+        "201": { description: Created; the new primary branch becomes active }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /branches:
+    post:
+      summary: Create a non-primary branch for an owned business
+      description: The business membership and owner role are verified in the database before creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [businessId, name], properties: { businessId: { type: string, format: uuid }, name: { type: string } } }
+      responses:
+        "201": { description: Branch and branch settings created }
+        "403": { description: The user is not the business owner }
+  /context:
+    post:
+      summary: Select the active branch for this session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [branchId], properties: { branchId: { type: string, format: uuid } } }
+      responses:
+        "200": { description: Active branch changed after membership validation }
+        "404": { description: Branch is not accessible to this account }
+  /products:
+    get:
+      summary: Search active-branch products
+      parameters:
+        - { in: query, name: q, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: Paginated products and branch-local result count }
+    post:
+      summary: Add a product to the active branch
+      responses:
+        "201": { description: Product created and audit event recorded }
+  /suppliers:
+    get:
+      summary: List active-branch suppliers
+      responses: { "200": { description: Branch-local supplier list } }
+    post:
+      summary: Create an active-branch supplier
+      responses: { "201": { description: Supplier created and audit event recorded } }
+  /imports/preview:
+    post:
+      summary: Validate and parse CSV or XLSX into a short-lived mapping draft
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, kind]
+              properties:
+                file: { type: string, format: binary }
+                kind: { type: string, enum: [products, price_list] }
+      responses:
+        "201": { description: Headers, sample rows and a 30-minute branch-scoped draft ID }
+        "413": { description: File, decompressed XLSX or row limit exceeded }
+        "415": { description: Unsupported file type }
+  /imports/commit:
+    post:
+      summary: Map validated columns and import products or create a price list for review
+      responses:
+        "201": { description: Products imported or price list staged without changing current prices }
+        "409": { description: Duplicate file, row key or stale draft conflict }
+  /pricelists:
+    get:
+      summary: List active-branch price lists
+      responses: { "200": { description: Price lists, supplier, review counts and status } }
+  /pricelists/{id}:
+    get:
+      summary: Read an active-branch price list and a page of review rows
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: List details, row warnings and branch-local match suggestions }
+        "404": { description: Not found in the active branch }
+  /pricelists/{id}/rows/{rowId}:
+    patch:
+      summary: Explicitly review a row, correct mapped values, select a product or skip it
+      responses:
+        "200": { description: Review state stored; current product prices remain unchanged }
+        "404": { description: List, row or product is outside the active branch }
+  /pricelists/{id}/approve:
+    post:
+      summary: Transactionally apply reviewed purchase prices and append history/audit records
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [rowIds, confirm], properties: { rowIds: { type: array, maxItems: 500, items: { type: string, format: uuid } }, confirm: { type: boolean, const: true } } }
+      responses:
+        "200": { description: Applied row count and remaining unapproved rows }
+        "409": { description: A row is unreviewed or its current product version/price changed }
+  /pricelists/{id}/cancel:
+    post:
+      summary: Cancel a price list only before any row has been applied
+      responses: { "200": { description: Cancelled and audited } }
+  /pricelists/{id}/export:
+    get:
+      summary: Download CSV or XLSX rows from a fully approved active-branch price list
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: format, schema: { type: string, enum: [csv, xlsx] } }
+      responses:
+        "200": { description: Branch-scoped spreadsheet-safe export; download event recorded }
+        "409": { description: The price list is not fully approved }
+  /history:
+    get:
+      summary: Read active-branch audit history
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: size, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses: { "200": { description: Paginated branch event history } }
+  /settings:
+    get:
+      summary: Read active-branch pricing proposal settings
+      responses: { "200": { description: Margin, markup, rounding step and currency } }
+    patch:
+      summary: Update active-branch proposal settings
+      responses: { "200": { description: Saved and audited; product prices are not changed } }
+  /health:
+    get:
+      security: []
+      summary: Return minimal database readiness status
+      responses:
+        "200": { description: Ready }
+        "503": { description: Unavailable }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: bahaban_session
+  responses:
+    BadRequest:
+      description: Invalid request
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    RateLimited:
+      description: Request limit or OTP cooldown reached
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+        requestId: { type: string, format: uuid }
