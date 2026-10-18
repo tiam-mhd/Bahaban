@@ -19,6 +19,11 @@ import {
   normalizeText,
   roundPrice,
 } from "@/lib/domain";
+import {
+  importTemplates,
+  type ImportMappingKey,
+  type ImportTemplateKind,
+} from "@/lib/import-templates";
 import { Icon, Modal, Spinner } from "@/components/ui";
 import type {
   BranchSettings,
@@ -42,6 +47,28 @@ const fieldLabels: Record<string, string> = {
   costPrice: "قیمت خرید فعلی",
   salePrice: "قیمت فروش",
 };
+
+function ImportTemplateLinks({ kind }: { kind: ImportTemplateKind }) {
+  const label = kind === "products" ? "کالاها" : "قیمت‌نامه";
+  return (
+    <div className="toolbar-group import-template-links" aria-label={`قالب ورود ${label}`}>
+      <a
+        className="btn btn-ghost btn-small"
+        href={`/api/imports/template?kind=${kind}&format=xlsx`}
+        download
+      >
+        <Icon name="download" size={14} /> قالب Excel
+      </a>
+      <a
+        className="btn btn-ghost btn-small"
+        href={`/api/imports/template?kind=${kind}&format=csv`}
+        download
+      >
+        <Icon name="download" size={14} /> قالب CSV
+      </a>
+    </div>
+  );
+}
 
 const warningLabels: Record<string, string> = {
   missing_name: "نام کالا خالی است",
@@ -136,6 +163,7 @@ export function ProductsSection(props: Props) {
           <p>{new Intl.NumberFormat("fa-IR").format(total)} کالا در شعبهٔ انتخاب‌شده</p>
         </div>
         <div className="toolbar-group">
+          <ImportTemplateLinks kind="products" />
           <button className="btn btn-ghost" onClick={() => setModal("import")} type="button">
             <Icon name="upload" size={15} /> ورود CSV یا Excel
           </button>
@@ -576,9 +604,12 @@ export function ImportsSection(props: Props) {
           <h2>ورود قیمت‌نامه</h2>
           <p>فایل CSV یا XLSX را بارگذاری و ستون‌های آن را مشخص کنید.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setModal(true)} type="button">
-          <Icon name="upload" size={15} /> بارگذاری قیمت‌نامه
-        </button>
+        <div className="toolbar-group">
+          <ImportTemplateLinks kind="price_list" />
+          <button className="btn btn-primary" onClick={() => setModal(true)} type="button">
+            <Icon name="upload" size={15} /> بارگذاری قیمت‌نامه
+          </button>
+        </div>
       </div>
       <div className="panel" style={{ marginBottom: 14 }}>
         <div className="panel-body" style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -632,16 +663,7 @@ type Preview = {
   rowCount: number;
 };
 type ImportKind = "products" | "price_list";
-type MappingKey =
-  | "name"
-  | "sku"
-  | "barcode"
-  | "brand"
-  | "model"
-  | "unit"
-  | "price"
-  | "costPrice"
-  | "salePrice";
+type MappingKey = ImportMappingKey;
 type Mapping = Partial<Record<MappingKey, string>>;
 
 const mappingKeys: MappingKey[] = [
@@ -669,7 +691,12 @@ function guessMapping(headers: string[], kind: ImportKind): Mapping {
     salePrice: ["قیمت فروش", "sale price", "selling price"],
   };
   const result: Mapping = {};
+  for (const column of importTemplates[kind].columns) {
+    const found = headers.find((header) => normalizeText(header) === normalizeText(column.header));
+    if (found) result[column.key] = found;
+  }
   for (const key of mappingKeys) {
+    if (result[key]) continue;
     if (kind === "price_list" && (key === "costPrice" || key === "salePrice")) continue;
     if (kind === "products" && key === "price") continue;
     const candidates = aliases[key].map(normalizeText);
@@ -881,16 +908,28 @@ function ImportModal({
           </select>
         </Field>
         {!preview && (
-          <Field label="فایل قیمت‌نامه یا کالا" full>
-            <input
-              type="file"
-              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            />
-            <span className="field-hint">
-              CSV با UTF-8 یا XLSX · حجم و تعداد ردیف‌ها در سمت سامانه بررسی می‌شود
-            </span>
-          </Field>
+          <>
+            <div className="field full import-template-callout">
+              <div className="import-template-copy">
+                <strong>برای ورود بدون خطا از قالب آماده استفاده کنید</strong>
+                <span className="field-hint">
+                  سرستون‌ها را تغییر ندهید و داده‌ها را از ردیف دوم وارد کنید؛ فایل خالی فقط برای
+                  دریافت قالب است.
+                </span>
+              </div>
+              <ImportTemplateLinks kind={kind} />
+            </div>
+            <Field label="فایل قیمت‌نامه یا کالا" full>
+              <input
+                type="file"
+                accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+              <span className="field-hint">
+                CSV با UTF-8 یا XLSX · حجم و تعداد ردیف‌ها در سمت سامانه بررسی می‌شود
+              </span>
+            </Field>
+          </>
         )}
         {preview && (
           <div className="field full">

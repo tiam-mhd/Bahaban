@@ -708,6 +708,29 @@ a {
   color: #89958e;
   font-size: 10px;
 }
+.import-template-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+  padding: 11px 12px;
+}
+.import-template-copy {
+  display: grid;
+  gap: 2px;
+}
+.import-template-copy strong {
+  font-size: 11px;
+}
+.import-template-links {
+  gap: 6px;
+}
+.import-template-links .btn {
+  white-space: nowrap;
+}
 .error-text {
   color: var(--red);
   font-size: 11px;
@@ -1439,6 +1462,16 @@ a {
   .page-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .import-template-callout {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .import-template-callout .import-template-links {
+    width: 100%;
+  }
+  .import-template-callout .import-template-links .btn {
+    flex: 1;
   }
   .approval-bar {
     align-items: flex-start;
